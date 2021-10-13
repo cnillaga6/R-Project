@@ -1,0 +1,641 @@
+---
+title: "Determinants of Test Scores in the United States"
+author: "Cesar Nillaga Hannah Clarke Stephanie Calloway"
+date: "5/27/2021"
+output: rmdformats::readthedown
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, include=FALSE}
+library(tidyverse)
+library(here)
+library(readxl)
+library(lubridate)
+library(extrafont)
+library(broom)
+library(scales)
+```
+
+
+
+```{r, include=FALSE}
+schools <- read_xlsx(here::here("Stat331", "Project", "US_schools_data.xlsx"))
+
+regions <- read_csv(here::here("Stat331", "Project", "regions.csv"))
+```
+
+
+```{r, include=FALSE}
+schools_update <- schools %>%
+  select(PRIMARY_KEY, TOTAL_EXPENDITURE:CAPITAL_OUTLAY_EXPENDITURE, ends_with(c("READING", "MATHEMATICS")))
+```
+
+
+```{r, include=FALSE}
+schools_update <- schools_update %>%
+  mutate(PRIMARY_KEY = str_replace_all(PRIMARY_KEY, "_", " "),
+         Year = str_extract(PRIMARY_KEY,  ("\\d{4}")),
+         State = str_trim(str_extract(PRIMARY_KEY, "(?<=\\d{4}).*"))) %>%
+  select(PRIMARY_KEY,
+         Year,
+         State,
+         everything())
+```
+
+
+```{r, include=FALSE}
+schools_update <- schools_update %>%
+  pivot_longer(cols = ends_with(c("READING", "MATHEMATICS")),
+               names_to = c("Grade", "Race", "Sex", "Test"),
+               names_sep = "_",
+               values_to = "Score")
+```
+
+
+```{r, include=FALSE}
+regions <- regions %>%
+  mutate(State = toupper(State)) %>%
+  select(-`State Code`,
+         -Division)
+```
+
+
+```{r, include=FALSE}
+school_regions <- full_join(schools_update, regions, by = "State")
+```
+
+
+
+```{r, include = FALSE}
+school_regions <- school_regions %>%
+  mutate(Sex = str_replace(Sex, "A", "ALL"),
+         Year = as.factor(Year),
+         Grade = str_replace_all(Grade, "G04", "4"), 
+         Grade = str_replace_all(Grade, "G08", "8"),
+         Test = str_to_title(Test)
+          ) %>%
+  filter(State != "NATIONAL", State != "DODEA")
+```
+
+
+```{r, include=FALSE}
+school_model <- school_regions %>%
+  filter(Test == "Mathematics") %>%
+  lm(Score ~ INSTRUCTION_EXPENDITURE, data = .)
+```
+
+```{r, include= FALSE}
+summary(school_model)
+```
+
+```{r, include= FALSE}
+school_model2 <- school_regions %>%
+  filter(Test == "Reading") %>%
+  lm(Score ~ INSTRUCTION_EXPENDITURE, data = .)
+
+summary(school_model2)
+```
+
+
+
+```{r, include=FALSE}
+# the code chunks to follow is our selection process
+#highest adjusted r sqaure is what we were looking for 
+school_model3 <- school_regions %>%
+  lm(Score ~ INSTRUCTION_EXPENDITURE + Test + Year + Grade + Sex + Race + Region, data = .)
+
+summary(school_model3)
+```
+
+
+```{r, include=FALSE}
+# we felt Sex wasn't a significant enough for us to include in our model 
+school_model4 <- school_regions %>%
+  lm(Score ~ INSTRUCTION_EXPENDITURE + Test + Year + Grade + Race + Region, data = .)
+
+summary(school_model4)
+```
+
+
+```{r, include=FALSE}
+# from the visualizations we created we felt we needed to include the region and race interaction 
+school_model5 <- school_regions %>%
+  lm(Score ~ INSTRUCTION_EXPENDITURE + Test + Year + Grade + Region*Race + Race + Region, data = .)
+
+summary(school_model5)
+```
+
+
+
+```{r, include=FALSE}
+school_regions %>% 
+  filter(Race != "A") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  labs(title = "Instructional Expenditure (dollars) vs. Test Score for Mathematics and Reading",
+       x = " ",
+       y = " ")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"))
+```
+
+# Introduction 
+
+Does higher educational spending lead to greater student success? Despite growing evidence in support of more educational spending, education researchers agree we need a stronger understanding of the context in which increased spending impacts student success (Jackson 2020). In the United States, the National Assessment for Educational Progress (NAEP) test scores in reading and math are the most common metric used to assess student success. In particular, national testing for 4th grade and 8th grade students has been conducted at the national level continuously since 1986. In this study, we investigated the relationship between instructional spending and NAEP reading and math test scores for 4th grade and 8th grade students in the United States. We assessed  several  linear models that incorporated different combinations of explanatory variables. Our final model and visualizations allowed us to illuminate how the relationship between instructional expenditure and student success (test scores) depends on several factors.
+
+
+# Methods 
+
+## Data 
+
+The initial dataset analyzed contained a wide variety of information on schools in the United States. Containing over 67,000 unique observations from the years 1992-2019. Originally, the variables of interest were  the type of test taken, the score of the test, the year testing occurred, the region of the testing, the grade level of the student, the race of the student, and finally institutional expenditure. 
+
+## Regions
+
+Region was not included as a variable in the primary dataset. However, we wanted to add another variable to our model that we believed could potentially influence the outcome of test scores. To do this, we used regional classifications for the United States as defined by the U.S. Census Bureau. This totalled in four regional groupings: Midwest, West, South, and Northeast. These regional classifications in particular are commonly accepted groupings of the states in the U.S, as is evidenced by the usage in official government institutions. The West and the Northeast for example both contain some of the most expensive areas to live in the United States. Comparing these regions against the Midwest and South could provide additional insight into factors that influence the score of students living in these particular regions, especially in regards to factors like institutional expenditure. 
+
+## Model Selection Criteria 
+
+To investigate how different explanatory variables impact test scores, we first created several visualizations to help detect potential patterns. These visualizations looked at how test scores were influenced by several factors. The most consistent pattern that emerged was that instructional expenditure and test scores clearly increased over time. In every case, we saw that 8th grade students scored consistently higher than 4th grade students, and that math scores were consistently higher than reading scores. This appeared to vary by race and region, as the slopes and intercepts for these relationships changed depending on those factors. While sex seemed to play a small role, the relationships for males and females did not seem different enough to warrant inclusion in our model.
+
+After visualizing our data, we fit a linear model that explored the relationship between test score, instructional expenditure, race, grade level, region, test type, and year. Since we determined that many of these factors appeared important in our visualizations, we fit a linear model that included all of these variables.  This resulted in an adjusted R² of 0.92. Based on our exploratory visualizations, we also considered that there could be an interaction between race and region, as slopes for races appeared different depending on region. We added this interaction into our model, which resulted in a higher adjusted R² of 0.93. We selected the model with the highest adjusted R² value, which is a metric that assesses how much variability in test scores can be explained by the given model. For this reason, we selected the second model. Thus, the final variables we included in our model were test score, instructional expenditure, grade level, test type, year, region, race, and the interaction between region and race.
+
+
+# Results
+
+#### Instructional Expenditure (dollars) vs. Test Score for Mathematics and Reading
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+school_regions %>% 
+  filter(Race != "A") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"))
+  
+```
+
+The first graph from the linear model explores the relationship between race, region, test, instruction expenditure, and grade on test Score. In context of grade level, 8th grade students scored higher in both categories of tests compared to 4th grade students. This was accounted for across all regions in the United States. The interaction of race and region was also included in the model because the graph shows how across different regions there were different test scores for Race. 
+
+***
+
+#### Instructional Expenditure (dollars) vs. Test Score by Year
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+school_regions %>% 
+  filter(Race != "A",
+         Year == 2011 | Year == 2013 | Year == 2015)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"))
+```
+
+This graph also explores the linear model but between the variables race, region, instruction expenditure, grade and year. For simplicity there were two graphs created. This graph explores the relationship of the variables across the years that were accounted for in the dataset. There were only three years that had data accounted for and this was for external reasons that were out of our control in this study. All other years were removed.
+
+
+***
+
+```{r, include=FALSE}
+school_predict <- predict(school_model5)
+```
+
+```{r, include=FALSE}
+school_sigma <- sigma(school_model5)
+```
+
+```{r, include=FALSE}
+noise <- function(x, mean = 0, sd){
+  n <- length(x)
+  new_data <- x + rnorm(n, mean, sd)
+  return(new_data)
+}
+```
+
+```{r, include=FALSE}
+predict_data <- tibble(predict_score = noise(school_predict,
+                                             sd = school_sigma)
+                       )
+```
+
+```{r, include=FALSE}
+predict_data <- school_regions %>% 
+  filter(!is.na(Score), 
+         !is.na(INSTRUCTION_EXPENDITURE), 
+         !is.na(Test),
+         !is.na(Year),
+         !is.na(Grade),
+         !is.na(Race),
+         !is.na(Region)) %>% 
+  select(Score, INSTRUCTION_EXPENDITURE, Year, Test, Grade, Race, Region) %>% 
+  bind_cols(predict_data)
+```
+
+## Simulated Results 
+
+### Reading Test Scores
+
+#### Instructional Expenditure (dollars) vs. Test Score by Test Type
+
+```{r, warning = FALSE, echo=FALSE, message=FALSE}
+pred <- predict_data %>% 
+  filter(Race != "A",
+         Test != "Mathematics") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = predict_score, color = Race, linetype = Grade ))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = " Predicted Scores",
+       x = " ",
+       y = " ")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.y = element_blank(),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+obs <- school_regions %>% 
+  filter(Race != "A",
+         Test != "Mathematics") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade ))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) + 
+  labs(title = "Observed Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.y = element_blank(),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+gridExtra::grid.arrange(pred, obs, ncol = 1)
+```
+
+***
+
+### Mathematics Test Scores
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+pred <- predict_data %>% 
+  filter(Race != "A",
+         Test != "Reading") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = predict_score, color = Race, linetype = Grade ))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = " Predicted Scores",
+       x = " ",
+       y = " ")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        strip.text.y = element_blank(),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+obs <- school_regions %>% 
+  filter(Race != "A",
+         Test != "Reading") %>%
+  group_by(Region, Test, Race) %>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade ))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Test~Region)+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) + 
+  labs(title = "Observed Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_blank(),
+        strip.text.y = element_blank(),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+gridExtra::grid.arrange(pred, obs, ncol = 1)
+```
+
+***
+
+#### Instructional Expenditure (dollars) vs. Test Score by Year
+
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+pred_test<- predict_data %>% 
+  filter(Race != "A",
+         Year == 2011)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Predicted Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+
+obs_test <- school_regions %>% 
+  filter(Race != "A",
+         Year == 2011)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Observed Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+gridExtra::grid.arrange(pred_test, obs_test, ncol = 1)
+
+```
+
+***
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+pred_test2 <- predict_data %>% 
+  filter(Race != "A",
+         Year == 2013)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Predicted Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+
+obs_test2 <- school_regions %>% 
+  filter(Race != "A",
+         Year == 2013)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Observed Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+gridExtra::grid.arrange(pred_test2, obs_test2, ncol = 1)
+```
+
+***
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+pred_test3 <- predict_data %>% 
+  filter(Race != "A",
+         Year == 2015)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Predicted Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+
+obs_test3 <- school_regions %>% 
+  filter(Race != "A",
+         Year == 2015)%>% 
+  ggplot(aes(x = INSTRUCTION_EXPENDITURE, y = Score, color = Race, linetype = Grade))+
+      geom_smooth(method = lm, se = FALSE)+
+        facet_grid(Year~Region, space = "free_y", scales = "free_y")+
+  scale_x_continuous(labels = label_number(scale = 1/100000)) +
+  labs(title = "Observed Scores",
+       x = " ",
+       y = " ",
+       caption = "Intstruction Expenditure in the $100,000")+
+  theme(plot.title.position = "plot",
+        panel.background = element_rect(fill = "White", color = "Black"),
+        panel.grid.major.y = element_line(size = 0.5, linetype = 'solid', color = "grey"),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank(),
+        strip.background = element_rect(fill="White"),
+        strip.text.x = element_text(color = "Black", face = "bold"),
+        strip.text.y = element_text(face = "bold"),
+        panel.spacing = unit(1, "cm"),
+        legend.position = "top",
+        legend.title = element_text(face = "bold"),
+        legend.key = element_rect(fill = "White"),
+        plot.title = element_text(face = "bold", hjust = 0.5))
+
+gridExtra::grid.arrange(pred_test3, obs_test3, ncol = 1)
+```
+
+
+In our study we created a simulated dataset from our linear model and these graphs explore the relationship between our observed data and our simulated data. From the simulated data the relationship between the variables in our model match the observed data that we initially fit. We still see the same relationship of grade and that is students in 8th grade tend to score higher than those or are in 4th grade in both mathematics and reading. Furthermore, the simulated data follows the same trend of relationship between race, regions, and test scores. 
+
+***
+
+```{r, warning = FALSE, include=FALSE}
+nsims <- 1000
+
+sims <- map_dfc(1:nsims,
+                ~tibble(sim = noise(school_predict, sd = school_sigma)))
+```
+
+```{r, include=FALSE}
+colnames(sims) <- colnames(sims) %>% 
+  str_replace(pattern = "\\.\\.\\.",
+                  replace = "_")
+```
+
+
+
+```{r, include=FALSE}
+sims <- school_regions %>% 
+  filter(!is.na(Score), 
+         !is.na(INSTRUCTION_EXPENDITURE), 
+         !is.na(Test),
+         !is.na(Year),
+         !is.na(Grade),
+         !is.na(Race),
+         !is.na(Region)) %>% 
+  select(Score) %>% 
+  bind_cols(sims)
+```
+
+```{r, include=FALSE}
+obs_vs_sim <- function(df){
+  lm(school_regions$Score ~ x)
+}
+
+sim_r_sq <- sims %>% 
+  map( ~lm(Score ~ .x, data = sims)) %>% 
+  map(glance) %>% 
+  map_dbl(~.$r.squared)
+```
+
+```{r, include=FALSE}
+sim_r_sq <- sim_r_sq[names(sim_r_sq) != "Score"]
+```
+
+
+```{r, echo=FALSE, message=FALSE}
+tibble(sims = sim_r_sq) %>% 
+  ggplot(aes(x = sims)) + 
+  geom_histogram()+
+  labs(x = "Adjusted R Sqaure Values",
+       y = "Count", 
+       title = "Distribution of Adjusted R Square Values") +
+  theme(plot.title = element_text(face = "bold", hjust = 0.5))
+```
+Lastly in our study, we regressed the observed dataset against the simulated dataset, then created a distribution of the adjusted R2 from this regression. In this plot, we can see that our simulated data have adjusted R2 values from 0.86 to 0.87. In addition, this plot indicates that our simulated data is very similar to what we had observed. On average, 86% of the data fit the regression model and 14% of our regression model does not account for the observed variability in the relationship between the observed test scores and our observed explanatory variables. 
+
+
+# Conclusion 
+
+The findings outlined in our model seem to indicate a strong correlation between test scores and the other variables mentioned. While further research would need to be conducted to make a stronger statement about the connection between them, we can determine a preliminary relationship. Nevertheless, the aspect of our model that can be improved is more data collection. Currently, we only have data for three years, however our model could potentially change with the addition of a wider variety of years. Despite the flaws in our model, we believe it is a crucial starting point in the research area of school testing in the United States, and can be used for investigations in the future.
+
+
+# References 
+
+Jackson, C.B. "Does School Spending Matter? The New Literature on an Old Question" An Equal Start: Policy and Practice to Promote Equality of Opportunity for Children. (2020)
+
+https://nces.ed.gov/nationsreportcard/
